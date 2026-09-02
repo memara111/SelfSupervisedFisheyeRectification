@@ -1,0 +1,14 @@
+# Runtime dependencies of src/{train,test,predict}.py and src/datasets.
+# (This file used to be empty, so `pip install -r requirements.txt` installed nothing.)
+#
+# Tested on python 3.8 - 3.11; older versions than the floors below are not supported
+# (PyYAML < 5.1 has a different yaml.load signature, Pillow < 8 lacks Resampling).
+numpy>=1.21
+torch>=1.7
+torchvision>=0.8
+pyyaml>=5.1
+Pillow>=8.0
+torchsummary>=1.5.1
+
+# optional: loss curves only. train.py runs (and checkpoints) without it.
+matplotlib>=3.1

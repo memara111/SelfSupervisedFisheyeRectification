@@ -1,4 +1,4 @@
-# SelfSupervisedFiseyeRectification
+# SelfSupervisedFisheyeRectification
 An official pytorch implementation of the paper "Self-Supervised Fisheye Image Rectification by Reconstructing Coordinate Relations"
 
 ![results.png](https://raw.githubusercontent.com/MasakiHosono/SelfSupervisedFisheyeRectification/main/statics/results.png?token=AE3JGTNHNWMGTDYSXFK7PHDAOVLIQ "results.png")
@@ -15,25 +15,75 @@ Our network is based on single parameter division model, architecture is shown b
 
 1. Install the dependencies.
    ```
+   python3 -m venv .venv && . .venv/bin/activate
    pip3 install -r requirements.txt
    ```
+   `torch`/`torchvision` need the wheel index matching your CUDA setup, e.g.
+   `pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu` for a CPU only box.
+   `matplotlib` is optional: it is used for the loss curve only.
 
 1. Prepare dataset
-   Download [cityscapes dataset](https://www.cityscapes-dataset.com) and put it under `data/` in the project root.
-   Then run the following script.
+   Download [cityscapes dataset](https://www.cityscapes-dataset.com) and unpack
+   `leftImg8bit_trainvaltest.zip` under `data/cityscapes/`. Then run the following script.
    ```
    python3 tools/prepare_cityscapes.py
    ```
+   It reshapes the archive layout and writes `train.lst`, `val.lst` and `test.lst`.
+   Images are moved by default; use `--mode copy` to keep the download intact,
+   `--mode link` to hardlink, `--mode dry_run` to only see what would happen, and
+   `--data_root` if the dataset lives somewhere else.
 
 1. Training.
    ```
    python3 src/train.py cfg/cityscapes.yml
    ```
+   Checkpoints, `losses.png` and `losses.json` land in `outputs/<dataset name>/`.
+   Add `--resume` to continue from an existing checkpoint.
 
 1. Testing.
    ```
    python3 src/test.py cfg/cityscapes.yml
    ```
+   Reports the distortion estimation error (MAE / median / max) together with the
+   residual of the coordinate relation the network is trained on, and writes
+   `results/metrics.csv` plus `*_org.jpg` / `*_dis.jpg` / `*_rec.jpg` triplets.
+
+1. Rectifying your own images.
+   ```
+   python3 src/predict.py cfg/cityscapes.yml -i path/to/fisheye_images -ow 1280 -oh 720
+   ```
+   Outputs go to `path/to/fisheye_images/rectified`; `--save-distortions` also writes the
+   estimated parameter per image. Add `--no_crop` for images that were not rendered by
+   `FisheyeEffector` (i.e. real fisheye frames, which were never cropped and magnified).
+
+1. Sanity checks.
+   ```
+   python3 tests/run_tests.py
+   ```
+   No dataset required: it verifies the geometry, the loss, the label/loss agreement and
+   a full train/test round trip on synthetic images.
+
+### Troubleshooting
+* **Every prediction sticks at `+/-MODEL.MAX_DISTORTION`.** The head is squashed into that
+  interval, so a too-high learning rate (or `MODEL.FREEZE_VGG: true` with the random VGG
+  features) saturates it. Lower `TRAIN.LEARNING_RATE`, or set `MODEL.VGG_PRETRAINED: true`.
+* **`TRAIN.CURRICULUM.MAX_DISTORTION` must stay below `MODEL.MAX_DISTORTION`.** Otherwise
+  the hardest targets sit exactly at the bound, which a squashed output can only approach
+  asymptotically. `train.py` warns and clamps when it sees this.
+* **`outputs/<dataset>/checkpoint.pth.tar` is where `test.py` and `predict.py` look**, and
+  `MODEL.MAX_DISTORTION` is recorded in it; the two scripts refuse a mismatch rather than
+  silently rescaling every prediction.
+
+### Conventions
+* The model parameter is the single coefficient `k` of the division model
+  `original = distorted / (1 - k * |distorted|^2)`, `k` in `[-1, 1]` (`k > 0` is
+  barrel/fisheye, `k < 0` is pincushion). Both directions and the key point labels are
+  derived from it in one place, `src/core/division_model.py`.
+* Coordinates are isotropic normalised units (`x` in `(-1, 1)`, `y` scaled by `H/W`),
+  so radii are aspect correct for non-square frames.
+* The loss is *self-supervised*: it never sees the ground truth `k`, only the relations
+  (vertical alignment + equal spacing) that the three key points must satisfy after
+  rectification.
 
 ### Citation
 ```

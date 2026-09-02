@@ -127,3 +127,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# project specific: generated data, run outputs, local environments
+outputs/
+results/
+*.pth.tar
+*.pth
+losses.png
+data/*
+!data/put_your_dataset_here
+.venv/
+venv/
+.pytest_cache/

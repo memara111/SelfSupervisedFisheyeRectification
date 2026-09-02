@@ -2,16 +2,42 @@ DATASET:
   NAME: cityscapes
   HEIGHT: 256
   WIDTH: 512
+  # Positive distortion pushes content outside the input frame, so the render is
+  # cropped to its valid region and magnified back to the full size. Set to false to
+  # keep the uncropped frame (black border) -- that is also what a raw fisheye photo
+  # needs when rectifying with src/predict.py.
+  CROP: true
 TRAIN:
   MAX_EPOCH: 1000
   BATCH_SIZE: 16
   LEARNING_RATE: 0.0001
+  NUM_WORKERS: 1
+  LOG_INTERVAL: 100
   CURRICULUM:
     ENABLED: true
     SWITCH_EPOCH: 30
+    # per stage the fragment count grows 2 -> 10 and the range grows from
+    # START_DISTORTION up to MAX_DISTORTION; the last stage switches to random fragments
+    # over the symmetric range [-MAX_DISTORTION, +MAX_DISTORTION]. Keep this strictly
+    # below MODEL.MAX_DISTORTION, otherwise the hardest targets sit at the output bound
+    # where the squashed head cannot reach them.
+    MAX_DISTORTION: 0.9
+    START_DISTORTION: 0.3
+    MAX_FRAGMENTS: 10
+MODEL:
+  # physical limit of the division model: bounds the network output and is recorded in the
+  # checkpoint, so test.py / predict.py refuse to run with a different value.
+  MAX_DISTORTION: 1.0
+  # false keeps the original behaviour (randomly initialised, fully trainable VGG head)
+  VGG_PRETRAINED: false
+  FREEZE_VGG: false
 TEST:
   CHECKPOINT: checkpoint.pth.tar
   SAVE_RESULTS: true
+  OUTPUT_DIR: results
+  # evaluate over the symmetric range [-MAX_DISTORTION, +MAX_DISTORTION]
+  NUM_FRAGMENTS: 10
+  MAX_DISTORTION: 0.9
   OUTPUT_SIZE:
     HEIGHT: 256
     WIDTH: 512
