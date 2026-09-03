@@ -63,6 +63,14 @@ Our network is based on single parameter division model, architecture is shown b
    No dataset required: it verifies the geometry, the loss, the label/loss agreement and
    a full train/test round trip on synthetic images.
 
+### Kaggle notebook
+
+`notebook534800d0d8.ipynb` runs this quick start end to end on Kaggle using **NYU Depth V2**
+instead of Cityscapes (no account, no 2 GB download): it writes `data/nyu2/{train,val,test}.lst`
+and a matching `cfg/nyu2.yml`, trains, tests, and finishes with `src/predict.py` on a photo.
+It pins the clone to the branch that carries the fixes above and keeps a patch cell that only
+applies to a pre-fix clone.
+
 ### Troubleshooting
 * **Every prediction sticks at `+/-MODEL.MAX_DISTORTION`.** The head is squashed into that
   interval, so a too-high learning rate (or `MODEL.FREEZE_VGG: true` with the random VGG
@@ -73,6 +81,10 @@ Our network is based on single parameter division model, architecture is shown b
 * **`outputs/<dataset>/checkpoint.pth.tar` is where `test.py` and `predict.py` look**, and
   `MODEL.MAX_DISTORTION` is recorded in it; the two scripts refuse a mismatch rather than
   silently rescaling every prediction.
+* **`TEST.OUTPUT_SIZE` need not equal `DATASET.HEIGHT/WIDTH`**: `test.py` resamples the image
+  to it before rectifying, so the saved `_rec.jpg` can be an upsized deliverable. Feeding a
+  differently sized image to `FisheyeEffector` yourself works too (`applyToArray` resamples),
+  but with nearest neighbour, so resize first if quality matters.
 
 ### Conventions
 * The model parameter is the single coefficient `k` of the division model

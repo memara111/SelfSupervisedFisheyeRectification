@@ -132,6 +132,12 @@ def main(args):
                     distortion=prediction.item(), backward=True, crop=crop,
                 )
                 image = transforms.ToPILImage(mode="RGB")(ParametersEstimationModule.denormalize(data[0]))
+                if image.size != (out_width, out_height):
+                    # TEST.OUTPUT_SIZE is the size of the *deliverable*; resample it here
+                    # so an upsampled output is interpolated by PIL instead of reaching the
+                    # effector at the dataset size (the effector's own fallback is nearest,
+                    # which looks blocky when magnifying).
+                    image = image.resize((out_width, out_height))
                 effector(image).save(os.path.join(output_dir, "{}_rec.jpg".format(idx)))
 
     if rows:

@@ -1,19 +1,28 @@
 import torch
 import torch.nn as nn
+import torchvision.models as tvmodels  # (aliased: "models" is also this repo's own package)
 import torchvision.transforms as transforms
 
 
 def load_vgg(pretrained=False, name="vgg11", hub_ref="pytorch/vision:v0.6.0"):
-    """``torch.hub`` is the historical way this model was built, but it makes model
-    *construction* need GitHub access. Fall back to the local torchvision copy.
+    """Build the VGG branch.
+
+    ``torch.hub`` is how this model was historically obtained, but even ``pretrained=False``
+    makes *construction* download the pytorch/vision repository, so an offline run (Kaggle
+    without internet, CI, a lab machine behind a proxy) failed on a network call that was
+    never needed: an untrained ``vgg11`` from the already-installed torchvision is the same
+    network. The hub is therefore only consulted when weights are actually requested, and
+    even then torchvision is used as a fallback.
     """
+    factory = getattr(tvmodels, name)
+    if not pretrained:
+        return factory(weights=None)
     try:
-        return torch.hub.load(hub_ref, name, pretrained=pretrained)
+        return torch.hub.load(hub_ref, name, pretrained=True)
     except Exception as error:  # offline, proxy, unpinned ref, ...
         print("WARNING: torch.hub.load({!r}, {!r}) failed ({}); "
               "falling back to torchvision.models.".format(hub_ref, name, error))
-        factory = getattr(__import__("torchvision.models", fromlist=[name]), name)
-        return factory(weights="DEFAULT" if pretrained else None)
+        return factory(weights="DEFAULT")
 
 
 class ParametersEstimationModule(nn.Module):

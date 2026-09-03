@@ -536,6 +536,25 @@ def test_pem_freeze_vgg_leaves_only_the_head_trainable():
     assert not model.vgg.training, "frozen branch must stay in eval mode"
 
 
+def test_pem_needs_no_network_when_unpretrained():
+    """Construction used to hit torch.hub even with pretrained=False (which only downloads
+    the repo, not weights), so an offline machine could not even build the model."""
+    if not have("torchvision"):
+        return
+    from models import ParametersEstimationModule
+
+    original = torch.hub.load
+    try:
+        def boom(*args, **kwargs):
+            raise AssertionError("torch.hub.load must not be called for pretrained=False")
+
+        torch.hub.load = boom
+        model = ParametersEstimationModule(vgg_pretrained=False)
+        assert model.vgg.classifier[6].out_features == 1
+    finally:
+        torch.hub.load = original
+
+
 def test_checkpoint_loads_across_dataparallel_wrapping():
     src = torch.nn.Linear(4, 2)
     src.weight.data.fill_(3.5)
@@ -636,8 +655,10 @@ def test_end_to_end_train_then_test_then_predict():
                     "  NUM_WORKERS: 0\n  CURRICULUM:\n    ENABLED: true\n    SWITCH_EPOCH: 1\n"
                     "    MAX_FRAGMENTS: 3\nTEST:\n  CHECKPOINT: checkpoint.pth.tar\n"
                     "  SAVE_RESULTS: true\n  OUTPUT_DIR: {}\n  NUM_FRAGMENTS: 3\n"
+                    # OUTPUT_SIZE deliberately differs from the dataset size: the rectified
+                    # deliverable is rendered there, so a size mismatch must not crash
                     "  OUTPUT_SIZE:\n    HEIGHT: {}\n    WIDTH: {}\n".format(
-                        H, W, os.path.join(tmp, "results"), H, W))
+                        H, W, os.path.join(tmp, "results"), 2 * H, 2 * W))
 
         def run(script, *extra):
             proc = subprocess.run([sys.executable, os.path.join(REPO, "src", script), cfg]
@@ -667,6 +688,11 @@ def test_end_to_end_train_then_test_then_predict():
         assert "abs err" in out and "MAE" in out, out[-3000:]
         assert os.path.isfile(os.path.join(tmp, "results", "metrics.csv"))
         assert os.path.isfile(os.path.join(tmp, "results", "0_rec.jpg"))
+        with Image.open(os.path.join(tmp, "results", "0_rec.jpg")) as rec:
+            assert rec.size == (2 * W, 2 * H), \
+                "TEST.OUTPUT_SIZE must drive the saved size, got {}".format(rec.size)
+        with Image.open(os.path.join(tmp, "results", "0_org.jpg")) as org:
+            assert org.size == (W, H)
 
         run("predict.py", "-i", data, "-ow", str(W), "-oh", str(H))
         assert len(os.listdir(os.path.join(data, "rectified"))) == 4
