@@ -1,9 +1,21 @@
 import torch
 import torch.nn as nn
 
+
 class DistortionLoss(nn.Module):
-    def __init__(self):
+    """Self-supervised distortion loss for the division model.
+
+    Fixes:
+    - avoids the numerically unstable quadratic-root expression
+      (-1 + sqrt(...)) / (2*a), which suffers catastrophic cancellation
+      when distortion is close to zero;
+    - avoids division by x when x is zero/near zero;
+    - keeps the loss finite for normal network outputs.
+    """
+
+    def __init__(self, eps=1e-8):
         super().__init__()
+        self.eps = eps
 
     def forward(self, distortion, coordinate_norms):
         dst_coordinates = []
@@ -11,16 +23,48 @@ class DistortionLoss(nn.Module):
             dst_x, dst_y = self.project(x, y, distortion)
             dst_coordinates.append((dst_x, dst_y))
 
-        return torch.mean(torch.pow(self.calc_distance(dst_coordinates), 2))
+        return torch.mean(self.calc_distance(dst_coordinates).square())
 
     def project(self, x, y, distortion):
-        a = distortion * x * (1 + y**2/x**2)
-        c = -x
+        # Division model:
+        # x_distorted = x_undistorted / (1 + distortion * r^2)
+        #
+        # The original implementation solved a quadratic using
+        # (-1 + sqrt(...)) / (2*a).  That form is unstable when a -> 0.
+        #
+        # Use the algebraically equivalent stable form:
+        #   2*c / (-1 - sqrt(1 - 4*a*c))
+        # where c = -x.
+        x_safe = torch.where(
+            x.abs() < self.eps,
+            torch.full_like(x, self.eps),
+            x,
+        )
 
-        new_x = (-1 + torch.sqrt(1 - 4*a*c)) / (2*a)
-        new_y = (y/x) * new_x
+        r2 = x_safe.square() + y.square()
+        a = distortion * r2 / x_safe
+        c = -x_safe
+
+        discriminant = (1.0 - 4.0 * a * c).clamp_min(self.eps)
+        sqrt_disc = torch.sqrt(discriminant)
+
+        denominator = -1.0 - sqrt_disc
+        new_x = (2.0 * c) / denominator
+
+        # At distortion == 0, the exact solution is x.
+        # The stable expression is already well behaved there, but explicitly
+        # select x to avoid accumulating floating-point error around zero.
+        zero_distortion = distortion.abs() < self.eps
+        new_x = torch.where(zero_distortion, x_safe, new_x)
+
+        new_y = (y / x_safe) * new_x
+
+        # Preserve the exact origin.
+        origin = (x.abs() < self.eps) & (y.abs() < self.eps)
+        new_x = torch.where(origin, torch.zeros_like(new_x), new_x)
+        new_y = torch.where(origin, torch.zeros_like(new_y), new_y)
 
         return new_x, new_y
 
     def calc_distance(self, coordinates):
-        return 100 * (coordinates[1][0] - coordinates[0][0])
+        return 100.0 * (coordinates[1][0] - coordinates[0][0])
