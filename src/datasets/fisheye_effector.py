@@ -22,7 +22,26 @@ class FisheyeEffector:
 
     def setDistortion(self, distortion=0.5):
         self.distortion = distortion
-        self.crop = distortion > 0
+
+        # BUG FIX: this was `distortion > 0`, which crops the distorted image
+        # to its non-black bounding box and resizes it back to fill the full
+        # canvas. That crop-and-resize rescales the visual content by a
+        # factor (`expansion` below, `self.float_width / (self.right -
+        # self.left)`) that GROWS as distortion grows. The problem: this
+        # same `expansion` was baked into `key_coordinates` (the training
+        # labels used by DistortionLoss), but DistortionLoss.project() has
+        # no notion of the crop and applies the pure, un-cropped division
+        # model. That mismatch — proportional to `expansion`, hence growing
+        # with distortion — systematically biases the loss's optimum toward
+        # UNDERESTIMATING the correction magnitude at higher distortion,
+        # which is exactly the saturating/compressed-toward-zero prediction
+        # pattern seen at high kdist across multiple training runs.
+        #
+        # Disabling the crop keeps expansion == 1.0 unconditionally, so the
+        # image actually fed to the network and the key_coordinates used to
+        # supervise it are geometrically consistent with each other and with
+        # what DistortionLoss.project() assumes, at every distortion level.
+        self.crop = False
         self.left, self.upper, self.right, self.lower = 0, 0, self.width, self.height
         self.key_coordinates = []
 
