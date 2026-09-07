@@ -66,6 +66,8 @@ def main(args):
         print('model_file "{}" does not exists.'.format(model_file))
         exit(1)
 
+    from PIL import Image as PILImage
+
     with torch.no_grad():
         for image, path in dataloader:
             output = model(image.to(DEVICE))
@@ -81,15 +83,26 @@ def main(args):
                 distortion = output,
             )
 
-            image = image[0]
+            # BUG FIX: previously reused the shrunk (256x144-style)
+            # model-input tensor for the undistort step below. That tensor
+            # is the wrong image (too small, and its size has nothing to do
+            # with the requested output canvas) and also exposed a latent
+            # bug in FisheyeEffector.padding(), which only pads when BOTH
+            # height AND width are strictly smaller than the target (an
+            # AND, not independent per-axis checks) — so a source image
+            # that's short by even one pixel on a single axis silently
+            # skips padding and crashes the later sparse matmul with a
+            # size mismatch.
+            #
+            # Fix: load the ORIGINAL full-resolution photo directly from
+            # disk and explicitly resize it to the exact output canvas
+            # size. This guarantees an exact match and bypasses the
+            # fragile pad-only logic entirely.
+            original_image = PILImage.open(path[0]).convert("RGB")
+            original_image = original_image.resize((args.output_width, args.output_height))
 
-            # denormalize
-            image = image * torch.tensor((0.5, 0.5, 0.5)).view(3, 1, 1)
-            image = image + torch.tensor((0.5, 0.5, 0.5)).view(3, 1, 1)
-
-            image = transforms.ToPILImage(mode='RGB')(image)
-            image = effector(image)
-            image.save(os.path.join(output_dir, filename))
+            undistorted = effector(original_image)
+            undistorted.save(os.path.join(output_dir, filename))
 
 if __name__ == '__main__':
     main(parser.parse_args())
