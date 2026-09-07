@@ -41,7 +41,9 @@ def main(args):
 
     dataset = EvalDataset(
         data_path = data_path,
-        transform = transform
+        transform = transform,
+        width = config['DATASET']['WIDTH'],
+        height = config['DATASET']['HEIGHT'],
     )
     dataloader = torch.utils.data.DataLoader(
         dataset,
