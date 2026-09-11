@@ -47,6 +47,6 @@ def getDistortions(num_fragments=10, random_values=False):
     distortions = [interval * i for i in range(num_fragments)]
 
     if random_values:
-        distortions = [val - random.random() * interval for val in distortions]
+        distortions = [val + random.random() * interval for val in distortions]
 
     return distortions
