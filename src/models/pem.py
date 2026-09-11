@@ -26,7 +26,7 @@ class ParametersEstimationModule(nn.Module):
             x = self.decoder(x)
             x = self.vgg(x)
             x = torch.flatten(x)
-            return -self.sigmoid(x)
+            return x
 
         def getTransforms(self):
             return transforms.Compose(
